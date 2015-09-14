@@ -145,6 +145,10 @@ cv::Mat ransacTest(
 	}
 	return fundemental;
 }
+
+bool cmpDMatch(const DMatch &a, const DMatch &b){
+	return a.distance > b.distance;
+}
 /**
 * @function main
 * @brief Main function
@@ -183,8 +187,8 @@ int main(int argc, char** argv)
 
 	//-- Step 2: Calculate descriptors (feature vectors)
 	//SurfDescriptorExtractor extractor;
-	SiftDescriptorExtractor extractor;
-	//OrbDescriptorExtractor extractor;
+	//SiftDescriptorExtractor extractor;
+	OrbDescriptorExtractor extractor;
 
 	Mat descriptors_1, descriptors_2;
 
@@ -192,9 +196,15 @@ int main(int argc, char** argv)
 	extractor.compute(img_2, keypoints_2, descriptors_2);
 
 	//-- Step 3: Matching descriptor vectors using FLANN matcher
-	FlannBasedMatcher matcher;
+	//FlannBasedMatcher matcher;
 	std::vector< DMatch > matches;
-	matcher.match(descriptors_1, descriptors_2, matches);
+	//matcher.match(descriptors_1, descriptors_2, matches);
+	Ptr<DescriptorMatcher> matcher;
+	matcher = new FlannBasedMatcher(new flann::LshIndexParams(5, 24, 2));
+	matcher->match(descriptors_1, descriptors_2, matches);
+	Mat imgM;
+	drawMatches(img_1, keypoints_1, img_2, keypoints_2, matches, imgM);
+	imshow("QQ", imgM);
 
 	/*Ptr<DescriptorMatcher> matcher;
 	std::vector<std::vector< DMatch >> matches1;
@@ -211,7 +221,7 @@ int main(int argc, char** argv)
 	std::vector<cv::DMatch> matches;
 	imshow("Good Matches", ransacTest(symMatches, keypoints_1, keypoints_2, matches));
 	*/
-
+	/*
 	double max_dist = 0; double min_dist = 100;
 
 	//-- Quick calculation of max and min distances between keypoints
@@ -224,19 +234,17 @@ int main(int argc, char** argv)
 
 	printf("-- Max dist : %f \n", max_dist);
 	printf("-- Min dist : %f \n", min_dist);
-
+	*/
 	//-- Draw only "good" matches (i.e. whose distance is less than 2*min_dist,
 	//-- or a small arbitary value ( 0.02 ) in the event that min_dist is very
 	//-- small)
 	//-- PS.- radiusMatch can also be used here.
+	sort(matches.begin(), matches.end(), cmpDMatch);
 	std::vector< DMatch > good_matches;
 
-	for (int i = 0; i < descriptors_1.rows; i++)
+	for (int i = 0; i < 10; i++)
 	{
-		if (matches[i].distance <= max(2 * min_dist, 0.02))
-		{
-			good_matches.push_back(matches[i]);
-		}
+		good_matches.push_back(matches[i]);
 	}
 
 	//-- Draw only "good" matches
