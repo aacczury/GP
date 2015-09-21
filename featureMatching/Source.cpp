@@ -6,11 +6,15 @@
 
 #include <stdio.h>
 #include <iostream>
+#include <cmath>
 #include "opencv2/core/core.hpp"
+#include "opencv2/imgproc/imgproc.hpp"
 #include "opencv2/features2d/features2d.hpp"
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/nonfree/features2d.hpp"
 #include "opencv2/calib3d/calib3d.hpp"
+
+#define PI 3.1415926535897
 
 using namespace cv;
 
@@ -147,28 +151,157 @@ cv::Mat ransacTest(
 }
 
 bool cmpDMatch(const DMatch &a, const DMatch &b){
-	return a.distance > b.distance;
+	return a.distance < b.distance;
 }
+
+int maint(){
+	Mat img_1 = imread("match.png", CV_LOAD_IMAGE_GRAYSCALE);
+	Mat img_2 = imread("input.png", CV_LOAD_IMAGE_GRAYSCALE);
+
+	for (int i = 0; i < img_1.rows; ++i){
+		for (int j = 0; j < img_1.cols; ++j){
+			if (((uchar *)img_1.data)[i * img_1.cols + j] > 230)
+				((uchar *)img_1.data)[i * img_1.cols + j] = 255;
+		}
+	}
+
+	int lx, rx, ty, by;
+	for (int i = 0; i < img_1.rows; ++i){
+		int flag = false;
+		for (int j = 0; j < img_1.cols; ++j){
+			if (((uchar *)img_1.data)[i * img_1.cols + j] != 255){
+				ty = i;
+				flag = true;
+				break;
+			}
+		}
+		if (flag) break;
+	}
+	for (int j = 0; j < img_1.cols; ++j){
+		int flag = false;
+		for (int i = 0; i < img_1.rows; ++i){
+			if (((uchar *)img_1.data)[i * img_1.cols + j] != 255){
+				lx = j;
+				flag = true;
+				break;
+			}
+		}
+		if (flag) break;
+	}
+	for (int i = img_1.rows - 1; i >= 0; --i){
+		int flag = false;
+		for (int j = 0; j < img_1.cols; ++j){
+			if (((uchar *)img_1.data)[i * img_1.cols + j] != 255){
+				by = i;
+				flag = true;
+				break;
+			}
+		}
+		if (flag) break;
+	}
+	for (int j = img_1.cols - 1; j >= 0; --j){
+		int flag = false;
+		for (int i = 0; i < img_1.rows; ++i){
+			if (((uchar *)img_1.data)[i * img_1.cols + j] != 255){
+				rx = j;
+				flag = true;
+				break;
+			}
+		}
+		if (flag) break;
+	}
+
+	int cX = 0.5*lx + 0.5*rx;
+	int cY = 0.5*ty + 0.5*by;
+	int maxLen = 0;
+	for (int i = 0; i < img_1.rows; ++i)
+		for (int j = 0; j < img_1.cols; ++j)
+			if (((uchar *)img_1.data)[i * img_1.cols + j] != 255)
+				if ((i - cY)*(i - cY) + (j - cX)*(j - cX) > maxLen)
+					maxLen = (i - cY)*(i - cY) + (j - cX)*(j - cX);
+	float cL = sqrt(sqrt(sqrt(maxLen)));
+	
+	Mat imS[3];
+	imS[0] = img_1;
+	imS[1] = img_1;
+	imS[2] = img_1;
+	
+	Mat circleImg;
+	merge(imS, 3, circleImg);
+	circleImg.convertTo(circleImg, CV_32F, 1.0 / 255.0);
+	circle(circleImg, Point(cX, cY), cL*cL*cL*cL, Scalar(0, 0, 255));
+	circle(circleImg, Point(cX, cY), cL*cL*cL, Scalar(0, 0, 255));
+	circle(circleImg, Point(cX, cY), cL*cL, Scalar(0, 0, 255));
+	circle(circleImg, Point(cX, cY), cL, Scalar(0, 0, 255));
+
+	line(circleImg, Point(lx, 0), Point(lx, circleImg.rows - 1), Scalar(255, 0, 0));
+	line(circleImg, Point(rx, 0), Point(rx, circleImg.rows - 1), Scalar(255, 0, 0));
+	line(circleImg, Point(0, ty), Point(circleImg.cols - 1, ty), Scalar(255, 0, 0));
+	line(circleImg, Point(0, by), Point(circleImg.cols - 1, by), Scalar(255, 0, 0));
+
+	for (int i = 0; i < 6; ++i){
+		int x = cL*cL*cL*cL*cos(PI / 6 * i);
+		int y = cL*cL*cL*cL*sin(PI / 6 * i);
+		line(circleImg, Point(cX-x, cY-y), Point(cX+x, cY+y), Scalar(0, 200, 0));
+	}
+
+	imshow("QQ", circleImg);
+
+	waitKey(0);
+	return 0;
+}
+
+Mat img_1, img_2;
+Point p1, p2;
+bool isMouseDown = false;
+bool isSelected = false;
+void CallBackFunc(int event, int x, int y, int flags, void* userdata)
+{
+	if (event == EVENT_LBUTTONDOWN){
+		isMouseDown = true;
+		p1.x = x; p1.y = y;
+	}
+	else if (event == EVENT_LBUTTONUP){
+		p2.x = x; p2.y = y;
+		isMouseDown = false;
+		isSelected = true;
+	}
+	else if (isMouseDown && event == EVENT_MOUSEMOVE){
+		p2.x = x; p2.y = y;
+		Mat match_clone = img_1.clone();
+		rectangle(match_clone, p1, p2, 0);
+		imshow("input", match_clone);
+	}
+}
+
 /**
 * @function main
 * @brief Main function
 */
 int main(int argc, char** argv)
 {
-	Mat img_1 = imread("match.png", CV_LOAD_IMAGE_GRAYSCALE);
-	Mat img_2 = imread("input.png", CV_LOAD_IMAGE_GRAYSCALE);
+	Mat sImg_1 = imread("match.png", CV_LOAD_IMAGE_GRAYSCALE);
+	Mat sImg_2 = imread("input.png", CV_LOAD_IMAGE_GRAYSCALE);
 
-	if (!img_1.data || !img_2.data)
+	if (!sImg_1.data || !sImg_2.data)
 	{
 		std::cout << " --(!) Error reading images " << std::endl; return -1;
 	}
 
+	double scale = 3;
+	resize(sImg_1, img_1, Size(sImg_1.cols * scale, sImg_1.rows * scale));
+	resize(sImg_2, img_2, Size(sImg_2.cols * scale, sImg_2.rows * scale));
+
+	namedWindow("input", WINDOW_AUTOSIZE);
+	setMouseCallback("input", CallBackFunc, NULL);
+	imshow("input", img_2);
+
 	//-- Step 1: Detect the keypoints using SURF Detector
 	int minHessian = 400;
 
-	OrbFeatureDetector detector(minHessian);
-	//SurfFeatureDetector detector(minHessian);
 	//SiftFeatureDetector detector(minHessian);
+	SurfFeatureDetector detector(minHessian);
+	//OrbFeatureDetector detector(minHessian);
 
 	std::vector<KeyPoint> keypoints_1, keypoints_2;
 
@@ -186,41 +319,18 @@ int main(int argc, char** argv)
 	imshow("Keypoints 2", img_keypoints_2);
 
 	//-- Step 2: Calculate descriptors (feature vectors)
+	SiftDescriptorExtractor extractor;
 	//SurfDescriptorExtractor extractor;
-	//SiftDescriptorExtractor extractor;
-	OrbDescriptorExtractor extractor;
+	//OrbDescriptorExtractor extractor;
 
 	Mat descriptors_1, descriptors_2;
 
 	extractor.compute(img_1, keypoints_1, descriptors_1);
 	extractor.compute(img_2, keypoints_2, descriptors_2);
 
-	//-- Step 3: Matching descriptor vectors using FLANN matcher
-	//FlannBasedMatcher matcher;
+	FlannBasedMatcher matcher;
 	std::vector< DMatch > matches;
-	//matcher.match(descriptors_1, descriptors_2, matches);
-	Ptr<DescriptorMatcher> matcher;
-	matcher = new FlannBasedMatcher(new flann::LshIndexParams(5, 24, 2));
-	matcher->match(descriptors_1, descriptors_2, matches);
-	Mat imgM;
-	drawMatches(img_1, keypoints_1, img_2, keypoints_2, matches, imgM);
-	imshow("QQ", imgM);
-
-	/*Ptr<DescriptorMatcher> matcher;
-	std::vector<std::vector< DMatch >> matches1;
-	std::vector<std::vector< DMatch >> matches2;
-	matcher->knnMatch(descriptors_1, descriptors_2, matches1, 2);
-	matcher->knnMatch(descriptors_2, descriptors_1, matches2, 2);
-
-	ratioTest(matches1);
-	ratioTest(matches2);
-
-	std::vector<DMatch> symMatches;
-	symmetryTest(matches1, matches2, symMatches);
-
-	std::vector<cv::DMatch> matches;
-	imshow("Good Matches", ransacTest(symMatches, keypoints_1, keypoints_2, matches));
-	*/
+	matcher.match(descriptors_1, descriptors_2, matches);
 	/*
 	double max_dist = 0; double min_dist = 100;
 
@@ -234,24 +344,59 @@ int main(int argc, char** argv)
 
 	printf("-- Max dist : %f \n", max_dist);
 	printf("-- Min dist : %f \n", min_dist);
-	*/
-	//-- Draw only "good" matches (i.e. whose distance is less than 2*min_dist,
-	//-- or a small arbitary value ( 0.02 ) in the event that min_dist is very
-	//-- small)
-	//-- PS.- radiusMatch can also be used here.
+
+	//-- Draw only "good" matches (i.e. whose distance is less than 3*min_dist )
+	std::vector< DMatch > good_matches;
+
+	for (int i = 0; i < descriptors_1.rows; i++)
+	{
+		if (matches[i].distance < 3 * min_dist)
+		{
+			good_matches.push_back(matches[i]);
+		}
+	}*/
+	
 	sort(matches.begin(), matches.end(), cmpDMatch);
 	std::vector< DMatch > good_matches;
 
-	for (int i = 0; i < 10; i++)
+	for (int i = 0; i < 10 && i < matches.size(); i++)
 	{
 		good_matches.push_back(matches[i]);
 	}
-
+	
 	//-- Draw only "good" matches
 	Mat img_matches;
 	drawMatches(img_1, keypoints_1, img_2, keypoints_2,
 		good_matches, img_matches, Scalar::all(-1), Scalar::all(-1),
 		vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+	/*
+	//-- Localize the object
+	std::vector<Point2f> obj;
+	std::vector<Point2f> scene;
+
+	for (int i = 0; i < good_matches.size(); i++)
+	{
+		//-- Get the keypoints from the good matches
+		obj.push_back(keypoints_1[good_matches[i].queryIdx].pt);
+		scene.push_back(keypoints_2[good_matches[i].trainIdx].pt);
+	}
+
+	Mat H = findHomography(obj, scene, CV_RANSAC);
+
+	//-- Get the corners from the image_1 ( the object to be "detected" )
+	std::vector<Point2f> obj_corners(4);
+	obj_corners[0] = cvPoint(0, 0); obj_corners[1] = cvPoint(img_1.cols, 0);
+	obj_corners[2] = cvPoint(img_1.cols, img_1.rows); obj_corners[3] = cvPoint(0, img_1.rows);
+	std::vector<Point2f> scene_corners(4);
+
+	perspectiveTransform(obj_corners, scene_corners, H);
+
+	//-- Draw lines between the corners (the mapped object in the scene - image_2 )
+	line(img_matches, scene_corners[0] + Point2f(img_1.cols, 0), scene_corners[1] + Point2f(img_1.cols, 0), Scalar(0, 255, 0), 4);
+	line(img_matches, scene_corners[1] + Point2f(img_1.cols, 0), scene_corners[2] + Point2f(img_1.cols, 0), Scalar(0, 255, 0), 4);
+	line(img_matches, scene_corners[2] + Point2f(img_1.cols, 0), scene_corners[3] + Point2f(img_1.cols, 0), Scalar(0, 255, 0), 4);
+	line(img_matches, scene_corners[3] + Point2f(img_1.cols, 0), scene_corners[0] + Point2f(img_1.cols, 0), Scalar(0, 255, 0), 4);
+	*/
 
 	//-- Show detected matches
 	imshow("Good Matches", img_matches);
