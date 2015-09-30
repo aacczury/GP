@@ -19,7 +19,8 @@ using namespace cv;
 #define PI 3.1415926535897
 #define INF 0x3f3f3f3f
 
-#define ImgLength 4
+#define ImgLength 5
+int imgIndex = 0;
 
 bool cmpDMatch(const DMatch &a, const DMatch &b) {
 	return a.distance < b.distance;
@@ -93,36 +94,76 @@ double featureMatching(Mat &img_1, Mat &img_2, Mat &img_matches) {
 	return diff;
 }
 
-Mat img_1, img_2;
-Point p1, p2;
+Point selectRegionCenter[ImgLength];
+double Lw[ImgLength][ImgLength];
 
+double distanceSquare(Point a, Point b) {
+	return (a.x - b.x)*(a.x - b.x) + (a.y - b.y)*(a.y - b.y);
+}
+/**	Lw = Dw - Aw 
+*	Dw = sum(w(i,.))
+*	Aw = w(i,j)
+*/
+void ringIt(){
+	// - Aw
+	double t = 10322;
+	for (int i = 0; i < ImgLength; ++i){
+		for (int j = i; j < ImgLength; ++j){
+			Lw[i][j] = Lw[j][i] = -exp(-distanceSquare(selectRegionCenter[i], selectRegionCenter[j]) / t);
+			std::cout << distanceSquare(selectRegionCenter[i], selectRegionCenter[j]) << ", ";
+		}
+		std::cout << std::endl;
+	}
+
+	// Lw = - Aw - (-Dw)
+	for (int i = 0; i < ImgLength; ++i){
+		double sumD = 0;
+		// -Dw
+		for (int j = 0; j < ImgLength; ++j){
+			sumD += Lw[i][j];
+		}
+		Lw[i][i] -= sumD;
+	}
+
+	for (int i = 0; i < ImgLength; ++i){
+		for (int j = 0; j < ImgLength; ++j)
+			std::cout << Lw[i][j] << ", ";
+		std::cout << std::endl;
+	}
+	Mat e = Mat(ImgLength, ImgLength, CV_32FC1);
+	for (int i = 0; i < ImgLength; ++i)
+		for (int j = 0; j < ImgLength; ++j)
+			((float *)e.data)[i * e.cols + j] = (float)Lw[i][j];
+	std::cout << e << std::endl;
+	Mat eVal, eVec;
+	eigen(e, eVal, eVec);
+	std::cout << eVec << std::endl;
+
+	Mat ring = Mat(500, 500, CV_32FC1, Scalar(1));
+	int c = 250, r = 200;
+	circle(ring, Point(250, 250), 1, 0, 2);
+	for (int i = 0; i < ImgLength; ++i){
+		circle(ring, Point(250 + r*((float *)eVec.data)[(ImgLength - 2) * e.cols + i], 250 + r*((float *)eVec.data)[(ImgLength - 3) * e.cols + i]), 1, 0, 2);
+		char text[10];
+		itoa(i, text, 10);
+		putText(ring, string(text), Point(250 + r*((float *)eVec.data)[(ImgLength - 2) * e.cols + i], 250 + r*((float *)eVec.data)[(ImgLength - 3) * e.cols + i]), FONT_HERSHEY_DUPLEX, 1, 0);
+	}
+	imshow("RingIt", ring);
+}
+
+Mat inputImage[ImgLength];
+Point p1, p2;
 void getSelectRegion() {
 	Point tP1, tP2;
 	tP1.x = min(p1.x, p2.x); tP1.y = min(p1.y, p2.y);
 	tP2.x = max(p1.x, p2.x); tP2.y = max(p1.y, p2.y);
-	Mat match = img_1.colRange(tP1.x, tP2.x + 1).rowRange(tP1.y, tP2.y + 1);
-	imshow("match", match);
-
-	int w = tP2.x - tP1.x + 1;
-	int h = tP2.y - tP1.y + 1;
-
-	Mat img_matches_tmp, img_matches(h, w, match.type());
-	double minV = INF;
-	for (int i = 0; i < img_2.rows - h; i += h/6){
-		for (int j = 0; j < img_2.cols - w; j += w/6){
-			Mat input = img_2.colRange(j, j + w).rowRange(i, i + h);
-			if (sum(input)[0] != 255 * w * h){
-				double nowV = featureMatching(match, input, img_matches_tmp);
-				if (nowV < minV){
-					minV = nowV;
-					img_matches = img_matches_tmp.clone();
-				}
-			}
-		}
-		std::cout << i << std::endl;
-	}
-	imshow("result", img_matches);
-	waitKey(0);
+	selectRegionCenter[imgIndex] = Point((tP1.x + tP2.x) / 2, (tP1.y + tP2.y) / 2);
+	printf("(%d, %d)\n", selectRegionCenter[imgIndex].x, selectRegionCenter[imgIndex].y);
+	imgIndex++;
+	if (imgIndex < ImgLength)
+		imshow("select region", inputImage[imgIndex]);
+	else
+		ringIt();
 }
 
 bool isMouseDown = false;
@@ -132,37 +173,34 @@ void CallBackFunc(int event, int x, int y, int flags, void* userdata) {
 		p1.x = x; p1.y = y;
 	}
 	else if (event == EVENT_LBUTTONUP){
-		p2.x = max(0, min(x, img_1.cols - 1)); p2.y = max(0, min(y, img_1.rows - 1));
+		p2.x = max(0, min(x, inputImage[imgIndex].cols - 1)); p2.y = max(0, min(y, inputImage[imgIndex].rows - 1));
 		isMouseDown = false;
 		if (p1.x != p2.x && p1.y != p2.y)
 			getSelectRegion();
 	}
 	else if (isMouseDown && event == EVENT_MOUSEMOVE){
-		p2.x = max(0, min(x, img_1.cols - 1)); p2.y = max(0, min(y, img_1.rows - 1));
-		Mat match_clone = img_1.clone();
-		rectangle(match_clone, p1, p2, 0);
-		imshow("select match", match_clone);
+		p2.x = max(0, min(x, inputImage[imgIndex].cols - 1)); p2.y = max(0, min(y, inputImage[imgIndex].rows - 1));
+		Mat selectRegion = inputImage[imgIndex].clone();
+		rectangle(selectRegion, p1, p2, 0);
+		imshow("select region", selectRegion);
 	}
 }
 
-Mat inputImage[ImgLength];
 int main(int argc, char** argv) {
+	double scale = 3;
+	Mat readImg;
+	for (int i = 0; i < ImgLength; ++i){
+		char filename[10];
+		sprintf(filename, "Eren/%02d.png", i + 1);
 
-	Mat sImg_1 = imread("match.png", CV_LOAD_IMAGE_GRAYSCALE);
-	Mat sImg_2 = imread("input.png", CV_LOAD_IMAGE_GRAYSCALE);
-
-	if (!sImg_1.data || !sImg_2.data)
-	{
-		std::cout << " --(!) Error reading images " << std::endl; return -1;
+		readImg = imread(filename, CV_LOAD_IMAGE_GRAYSCALE);
+		resize(readImg, inputImage[i], Size(readImg.cols * scale, readImg.rows * scale));
 	}
 
-	double scale = 3;
-	resize(sImg_1, img_1, Size(sImg_1.cols * scale, sImg_1.rows * scale));
-	resize(sImg_2, img_2, Size(sImg_2.cols * scale, sImg_2.rows * scale));
-
-	namedWindow("select match", WINDOW_AUTOSIZE);
-	setMouseCallback("select match", CallBackFunc, NULL);
-	imshow("select match", img_1);
+	imgIndex = 0;
+	namedWindow("select region", WINDOW_AUTOSIZE);
+	setMouseCallback("select region", CallBackFunc, NULL);
+	imshow("select region", inputImage[imgIndex]);
 	
 	waitKey(0);
 
