@@ -94,6 +94,11 @@ double featureMatching(Mat &img_1, Mat &img_2, Mat &img_matches) {
 	return diff;
 }
 
+Point selectRegion[ImgLength][5][2];
+void match(){
+
+}
+
 Point selectRegionCenter[ImgLength];
 double Lw[ImgLength][ImgLength];
 
@@ -153,17 +158,29 @@ void ringIt(){
 
 Mat inputImage[ImgLength];
 Point p1, p2;
+int selectCount = 0;
 void getSelectRegion() {
 	Point tP1, tP2;
 	tP1.x = min(p1.x, p2.x); tP1.y = min(p1.y, p2.y);
 	tP2.x = max(p1.x, p2.x); tP2.y = max(p1.y, p2.y);
-	selectRegionCenter[imgIndex] = Point((tP1.x + tP2.x) / 2, (tP1.y + tP2.y) / 2);
-	printf("(%d, %d)\n", selectRegionCenter[imgIndex].x, selectRegionCenter[imgIndex].y);
-	imgIndex++;
-	if (imgIndex < ImgLength)
-		imshow("select region", inputImage[imgIndex]);
-	else
-		ringIt();
+	selectRegion[imgIndex][selectCount][0] = tP1;
+	selectRegion[imgIndex][selectCount++][1] = tP2;
+
+	if (selectCount == 5){
+		selectCount = 0;
+		imgIndex++;
+		if (imgIndex < ImgLength)
+			imshow("select region", inputImage[imgIndex]);
+		else
+			match();
+	}
+	//selectRegionCenter[imgIndex] = Point((tP1.x + tP2.x) / 2, (tP1.y + tP2.y) / 2);
+	//printf("(%d, %d)\n", selectRegionCenter[imgIndex].x, selectRegionCenter[imgIndex].y);
+	//imgIndex++;
+	//if (imgIndex < ImgLength)
+	//	imshow("select region", inputImage[imgIndex]);
+	//else
+	//	ringIt();
 }
 
 bool isMouseDown = false;
