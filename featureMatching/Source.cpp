@@ -113,9 +113,10 @@ double featureMatching(Mat &img_1, Mat &img_2, Mat &img_matches, Point2f &center
 	center = avgPoint2f(scene);
 	
 	//std::cout << diff << std::endl;
-	/*
-	Mat H = findHomography(obj, scene, CV_RANSAC);
-	std::vector<Point2f> transObj(obj.size());
+	
+	//Mat H = findHomography(obj, scene, 0);
+
+	/*std::vector<Point2f> transObj(obj.size());
 	perspectiveTransform(obj, transObj, H);
 	double diff;
 	for (int i = 0; i < 20 && i < matches.size(); ++i)
@@ -348,26 +349,39 @@ Point findArea(Point tP1, Point tP2, Mat &img1, Mat &img2){
 	int w = maxL + 1;
 	int h = maxL + 1;
 
-	Mat img_matches_tmp;
+	Point searchP1(max(0, tP1.x - w), max(0, tP1.y - h));
+	Point searchP2(min(img2.cols, tP2.x + w), min(img2.rows, tP2.y + h));
+
+	Mat img_matches_tmp/*, img_matches*/;
 	Point2f match_center;
+	int maxCount = 1;
 	double maxV = -2;
 	Point maxP(0, 0);
-	for (int i = 0; i < img2.rows - h; i += h / 4){
-		for (int j = 0; j < img2.cols - w; j += w / 4){
+	for (int i = searchP1.y; i < searchP2.y - h; i += h / h){
+		for (int j = searchP1.x; j < searchP2.x - w; j += w / w){
 			Mat input = img2.colRange(j, j + w).rowRange(i, i + h);
 			if (sum(input)[0] != 255 * w * h){
 				double nowV = featureMatching(match, input, img_matches_tmp, match_center);
 				if (nowV > maxV){
+					maxCount = 1;
 					maxV = nowV;
 					maxP.x = match_center.x + j;
 					maxP.y = match_center.y + i;
+					//img_matches = img_matches_tmp.clone();
+				}
+				else if (nowV == maxV){
+					maxCount ++;
+					maxP.x += match_center.x + j;
+					maxP.y += match_center.y + i;
 				}
 			}
 		}
-		std::cout << i << ", " << maxV << std::endl;
-		std::cout << maxP.x << ", " << maxP.y << std::endl;
-	}
 
+		std::cout << i << ", " << maxV << std::endl;
+		std::cout << maxP.x / maxCount << ", " << maxP.y / maxCount << std::endl;
+	}
+	maxP.x /= maxCount;
+	maxP.y /= maxCount;
 	Mat img_matches = img2
 		.colRange(max(0, maxP.x - w / 2 + 1), min(img2.cols, maxP.x + w / 2))
 		.rowRange(max(0, maxP.y - h / 2 + 1), min(img2.rows, maxP.y + h / 2));
@@ -428,7 +442,7 @@ void findMatchCircle(Point tP1, Point tP2){
 			break;
 		else{
 			imgRing[curr].right = diff[0].index;
-			imgRing[diff[0].index].left = curr;
+			imgRing[imgRing[curr].right].left = curr;
 			curr = imgRing[curr].right;
 			imgRing[curr].center = diff[0].center;
 		}
