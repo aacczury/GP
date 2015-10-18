@@ -20,7 +20,7 @@ using namespace cv;
 #define PI 3.1415926535897
 #define INF 0x3f3f3f3f
 #define INPUTPATH "test/%02d.png"
-#define ImgLength 4
+#define ImgLength 2
 #define SCALE 3
 
 #define FindArea 200
@@ -500,6 +500,119 @@ void CallBackFunc(int event, int x, int y, int flags, void* userdata) {
 	}
 }
 
+void calShapeContext(Point center, double R, Mat &shapeBins){
+	
+	shapeBins = Mat::zeros(6, 12, CV_16U); // 6th bins is out of range 6 * 12 * unsigned short
+	Point begin(max(0, int(center.x - pow(R, 5) - 1)), max(0, int(center.y - pow(R, 5) - 1)));
+	Point end(min(inputImage[imgIndex].cols - 1, int(center.x + pow(R, 5) + 1)), min(inputImage[imgIndex].rows - 1, int(center.y + pow(R, 5) + 1)));
+	
+	for (int i = begin.y; i < end.y; ++i){
+		for (int j = begin.x; j < end.x; ++j){
+			double r = sqrt(distanceSquare(Point(j, i), center));
+			if (r == 0) continue;
+			int d = 0;
+			if (r > pow(R, 1)) d++;
+			if (r > pow(R, 2)) d++;
+			if (r > pow(R, 3)) d++;
+			if (r > pow(R, 4)) d++;
+			if (r > pow(R, 5)) d++;
+			double a = acos(abs(j - center.x) / r);
+			if (j < center.x) a += PI / 2;
+			if (i > center.y) a = 2 * PI - a;
+			if (int(a * 6 / PI) > 11)
+				printf("%d\n", int(a * 6 / PI));
+			if (((uchar *)inputImage[imgIndex].data)[i * inputImage[imgIndex].cols + j] < 200)
+				((ushort *)shapeBins.data)[d * shapeBins.cols + int(a * 6 / PI)] ++;
+		}
+	}
+}
+
+void showShapeRange(Point center, double R, Mat img, string windowsName){
+	Mat selectRegionSplit[3];
+	selectRegionSplit[0] = img.clone();
+	selectRegionSplit[1] = img.clone();
+	selectRegionSplit[2] = img.clone();
+	
+	Mat selectRegion;
+	merge(selectRegionSplit, 3, selectRegion);
+	circle(selectRegion, center, pow(R, 1), Scalar(0, 0, 255));
+	circle(selectRegion, center, pow(R, 2), Scalar(0, 0, 255));
+	circle(selectRegion, center, pow(R, 3), Scalar(0, 0, 255));
+	circle(selectRegion, center, pow(R, 4), Scalar(0, 0, 255));
+	circle(selectRegion, center, pow(R, 5), Scalar(0, 0, 255));
+
+	imshow(windowsName, selectRegion);
+}
+
+
+void showRectRange(Point P1, Point P2, Mat img, string windowsName){
+	Mat selectRegionSplit[3];
+	selectRegionSplit[0] = img.clone();
+	selectRegionSplit[1] = img.clone();
+	selectRegionSplit[2] = img.clone();
+
+	Mat selectRegion;
+	merge(selectRegionSplit, 3, selectRegion);
+	rectangle(selectRegion, P1, P2, Scalar(0, 0, 255));
+
+	imshow(windowsName, selectRegion);
+}
+
+double getShapeDiff(Mat s1, Mat s2){
+	double diff = 0;
+	for (int i = 0; i < 5; ++i){
+		for (int j = 0; j < 12; ++j){
+			if (((ushort *)s1.data)[i * s1.cols + j] + ((ushort *)s2.data)[i * s2.cols + j] != 0){
+				diff += ((double)((ushort *)s1.data)[i * s1.cols + j] - (double)((ushort *)s2.data)[i * s2.cols + j])
+					* ((double)((ushort *)s1.data)[i * s1.cols + j] - (double)((ushort *)s2.data)[i * s2.cols + j])
+					/ ((double)((ushort *)s1.data)[i * s1.cols + j] + (double)((ushort *)s2.data)[i * s2.cols + j]);
+			}
+		}
+	}
+
+	return diff / 2;
+}
+
+void findSimilarShape(){
+	double R = 2.4; // need robust
+	double range = 2.5;
+	Point center = Point(p2.x, p2.y);
+
+	Mat initImgShape;
+	calShapeContext(center, R, initImgShape);
+	showShapeRange(center, R, inputImage[imgIndex], "select region");
+
+	imgIndex++;
+	Point begin(max(int(pow(R, 5)), int(center.x - range * pow(R, 5) - 1)), max(int(pow(R, 5)), int(center.y - range * pow(R, 5) - 1)));
+	Point end(min(int(inputImage[imgIndex].cols - pow(R, 5)), int(center.x + range * pow(R, 5) + 1)), min(int(inputImage[imgIndex].rows - pow(R, 5)), int(center.y + range * pow(R, 5) + 1)));
+	//showRectRange(begin, end, inputImage[imgIndex], "QQQ");
+	
+	double minV = INF;
+	Point minCenter(0, 0);
+	Mat perShape;
+	for (int i = begin.y; i < end.y; ++i){
+		for (int j = begin.x; j < end.x; ++j){
+			calShapeContext(Point(j, i), R, perShape);
+
+			double diff = getShapeDiff(initImgShape, perShape);
+			if (diff <= minV){
+				minV = diff;
+				minCenter = Point(j, i);
+			}
+		}
+		printf("%4d: %lf\n", i, minV);
+	}
+	showShapeRange(minCenter, R, inputImage[imgIndex], "QQQQQQQQQQQ");
+}
+
+void CallBackFunct(int event, int x, int y, int flags, void* userdata) {
+	if (event == EVENT_LBUTTONUP){
+		p2.x = max(0, min(x, inputImage[imgIndex].cols - 1)); p2.y = max(0, min(y, inputImage[imgIndex].rows - 1));
+		findSimilarShape();
+	}
+}
+
+
 int main(int argc, char** argv) {
 	Mat readImg;
 	for (int i = 0; i < ImgLength; ++i){
@@ -509,10 +622,10 @@ int main(int argc, char** argv) {
 		readImg = imread(filename, CV_LOAD_IMAGE_GRAYSCALE);
 		resize(readImg, inputImage[i], Size(readImg.cols * SCALE, readImg.rows * SCALE));
 	}
-
+	
 	imgIndex = 0;
 	namedWindow("select region", WINDOW_AUTOSIZE);
-	setMouseCallback("select region", CallBackFunc, NULL);
+	setMouseCallback("select region", CallBackFunct, NULL);
 	imshow("select region", inputImage[imgIndex]);
 	
 	waitKey(0);
