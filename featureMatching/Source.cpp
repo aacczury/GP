@@ -477,7 +477,8 @@ void getSelectRegion() {
 	//	imshow("select region", inputImage[imgIndex]);
 	//else
 	//	ringIt();
-	findMatchCircle(tP1, tP2);
+	
+	//findMatchCircle(tP1, tP2);
 }
 
 bool isMouseDown = false;
@@ -581,7 +582,7 @@ void findSimilarShape(){
 	Mat initImgShape;
 	calShapeContext(center, R, initImgShape);
 	showShapeRange(center, R, inputImage[imgIndex], "select region");
-
+	/*
 	imgIndex++;
 	Point begin(max(int(pow(R, 5)), int(center.x - range * pow(R, 5) - 1)), max(int(pow(R, 5)), int(center.y - range * pow(R, 5) - 1)));
 	Point end(min(int(inputImage[imgIndex].cols - pow(R, 5)), int(center.x + range * pow(R, 5) + 1)), min(int(inputImage[imgIndex].rows - pow(R, 5)), int(center.y + range * pow(R, 5) + 1)));
@@ -602,7 +603,7 @@ void findSimilarShape(){
 		}
 		printf("%4d: %lf\n", i, minV);
 	}
-	showShapeRange(minCenter, R, inputImage[imgIndex], "QQQQQQQQQQQ");
+	showShapeRange(minCenter, R, inputImage[imgIndex], "QQQQQQQQQQQ");*/
 }
 
 void CallBackFunct(int event, int x, int y, int flags, void* userdata) {
@@ -625,10 +626,134 @@ int main(int argc, char** argv) {
 	
 	imgIndex = 0;
 	namedWindow("select region", WINDOW_AUTOSIZE);
-	setMouseCallback("select region", CallBackFunct, NULL);
+	setMouseCallback("select region", CallBackFunc, NULL);
 	imshow("select region", inputImage[imgIndex]);
 	
 	waitKey(0);
 
 	return 0;
+}
+
+
+/** @function main */
+int maintt(int argc, char** argv)
+{
+	Mat smallsrc, src, src_gray;
+
+	/// Read the image
+	smallsrc = imread("test/01.png", 1);
+
+	if (!smallsrc.data)
+	{
+		return -1;
+	}
+
+	resize(smallsrc, src, Size(smallsrc.cols * SCALE, smallsrc.rows * SCALE));
+
+	/// Convert it to gray
+	cvtColor(src, src_gray, CV_BGR2GRAY);
+
+	/// Reduce the noise so we avoid false circle detection
+	GaussianBlur(src_gray, src_gray, Size(9, 9), 2, 2);
+
+	vector<Vec3f> circles;
+
+	/// Apply the Hough Transform to find the circles
+	HoughCircles(src_gray, circles, CV_HOUGH_GRADIENT, 1, src_gray.rows / 8, 100, 50, 1, 100);
+
+	/// Draw the circles detected
+	for (size_t i = 0; i < circles.size(); i++)
+	{
+		Point center(cvRound(circles[i][0]), cvRound(circles[i][1]));
+		int radius = cvRound(circles[i][2]);
+		// circle center
+		circle(src, center, 3, Scalar(0, 255, 0), -1, 8, 0);
+		// circle outline
+		circle(src, center, radius, Scalar(0, 0, 255), 3, 8, 0);
+	}
+
+	/// Show your results
+	namedWindow("Hough Circle Transform Demo", CV_WINDOW_AUTOSIZE);
+	imshow("Hough Circle Transform Demo", src);
+
+	waitKey(0);
+	return 0;
+}
+
+int sliderPos = 215;
+
+Mat image;
+
+void processImage(int, void*);
+
+int mainttt(int argc, char** argv)
+{
+	const char* filename = argc == 2 ? argv[1] : (char*)"stuff.jpg";
+	Mat smallImg;
+	smallImg = imread("test/09.png", 0);
+	if (smallImg.empty())
+	{
+		std::cout << "Couldn't open image " << filename << "\nUsage: fitellipse <image_name>\n";
+		return 0;
+	}
+	resize(smallImg, image, Size(smallImg.cols * 3, smallImg.rows * 3));
+
+	imshow("source", image);
+	namedWindow("result", 1);
+
+	// Create toolbars. HighGUI use.
+	createTrackbar("threshold", "result", &sliderPos, 255, processImage);
+	processImage(0, 0);
+
+	// Wait for a key stroke; the same function arranges events processing
+	waitKey();
+	return 0;
+}
+
+// Define trackbar callback functon. This function find contours,
+// draw it and approximate it by ellipses.
+void processImage(int /*h*/, void*)
+{
+	vector<vector<Point> > contours;
+	Mat bimage = image >= sliderPos;
+
+	findContours(bimage, contours, CV_RETR_LIST, CV_CHAIN_APPROX_NONE);
+
+	Mat cimage = image.clone();
+	Mat splitCimage[3];
+	splitCimage[0] = image.clone();
+	splitCimage[1] = image.clone();
+	splitCimage[2] = image.clone();
+	Mat mergeImge;
+	merge(splitCimage, 3, mergeImge);
+	//Mat cimage = Mat::zeros(bimage.size(), CV_8UC3);
+
+	for (size_t i = 0; i < contours.size(); i++)
+	{
+		size_t count = contours[i].size();
+		if (count < 6)
+			continue;
+
+		Mat pointsf;
+		Mat(contours[i]).convertTo(pointsf, CV_32F);
+		RotatedRect box = fitEllipse(pointsf);
+
+		if (MAX(box.size.width, box.size.height) > MIN(box.size.width, box.size.height) * 30)
+			continue;
+		if (MAX(box.size.width, box.size.height) > 100)
+			continue;
+		if (MIN(box.size.width, box.size.height) < 25)
+			continue;
+		drawContours(mergeImge, contours, (int)i, Scalar(0, 0, 255), 1, 8);
+
+		ellipse(mergeImge, box, Scalar(0, 0, 255), 1, CV_AA);
+		ellipse(mergeImge, box.center, box.size*0.5f, box.angle, 0, 360, Scalar(0, 0, 255), 1, CV_AA);
+		Point2f vtx[4];
+		box.points(vtx);
+		for (int j = 0; j < 4; j++)
+			line(mergeImge, vtx[j], vtx[(j + 1) % 4], Scalar(0, 0, 255), 1, CV_AA);
+	}
+
+	imshow("result", mergeImge);
+	imwrite("result.png", mergeImge);
 }
