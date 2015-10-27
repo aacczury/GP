@@ -391,6 +391,55 @@ Point findArea(Point tP1, Point tP2, Mat &img1, Mat &img2){
 	return maxP;
 }
 
+
+void getImgFeature(Mat &img, std::vector<KeyPoint> &keypoints, Mat &descriptors) {
+	int minHessian = 400;
+	SurfFeatureDetector detector(minHessian);
+
+	// size() => numbers of keypoints
+	// Keypoint.pt => position of keypoint
+	detector.detect(img, keypoints);
+
+	Mat img_keypoints;
+	drawKeypoints(img, keypoints, img_keypoints, Scalar::all(-1), DrawMatchesFlags::DEFAULT);
+	imshow("Keypoints", img_keypoints);
+
+	// rows => numbers of keypoints
+	// cols => numbers of features (128)
+	SiftDescriptorExtractor extractor;
+	extractor.compute(img, keypoints, descriptors);
+
+	return;
+}
+
+void getAreaFeature(Point P1, Point P2, std::vector<KeyPoint> keypoint, Mat descriptors, std::vector<KeyPoint> &areaKeypoint, Mat &areaDescriptors){
+
+}
+
+void findAreaNice(Point tP1, Point tP2, Mat &img1, Mat &img2){
+	Mat match = img1
+		.colRange(max(0, tP1.x), min(img1.cols, tP2.x + 1))
+		.rowRange(max(0, tP1.y), min(img1.rows, tP2.y + 1));
+	imshow("match", match);
+	std::vector<KeyPoint> keypoints1, keypoints2;
+	Mat descriptors1, descriptors2;
+	getImgFeature(match, keypoints1, descriptors1);
+	getImgFeature(img2, keypoints2, descriptors2);
+	
+	std::vector<KeyPoint> areaKeypoint;
+	Mat areaDescriptors;
+	getAreaFeature(tP1, tP2, keypoints2, descriptors2, areaKeypoint, areaDescriptors);
+
+	Mat img_keypoints;
+	drawKeypoints(img2.colRange(tP1.x, tP2.x + 1).rowRange(tP1.y, tP2.y + 1), areaKeypoint, img_keypoints, Scalar::all(-1), DrawMatchesFlags::DEFAULT);
+	imshow("Keypoints", img_keypoints);
+
+
+	waitKey(0);
+
+	return;
+}
+
 /*
 a <> b
 c <> a <> b
@@ -458,6 +507,7 @@ void getSelectRegion() {
 	Point tP1, tP2;
 	tP1.x = min(p1.x, p2.x); tP1.y = min(p1.y, p2.y);
 	tP2.x = max(p1.x, p2.x); tP2.y = max(p1.y, p2.y);
+	findAreaNice(tP1, tP2, inputImage[0], inputImage[1]);
 	//selectRegion[imgIndex][selectCount][0] = tP1;
 	//selectRegion[imgIndex][selectCount++][1] = tP2;
 
