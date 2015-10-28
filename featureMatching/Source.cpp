@@ -49,17 +49,28 @@ Point2f avgPoint2f(std::vector<Point2f> a){
 
 double corr2(std::vector<Point2f> a, std::vector<Point2f> b){
 	Point2f avgA = avgPoint2f(a), avgB = avgPoint2f(b);
-	//std::cout << avgA.x << ", " << avgA.y << std::endl;
 	double varA = 0, varB = 0, varAB = 0;
 	for (int i = 0; i < a.size(); ++i){
 		varA += (a[i] - avgA).ddot(a[i] - avgA);
 		varB += (b[i] - avgB).ddot(b[i] - avgB);
 		varAB += (a[i] - avgA).ddot(b[i] - avgB);
 	}
-	//std::cout << varAB << "\t" << varA << "\t" << varB << std::endl;
+
 	if (varA == 0 || varB == 0)
 		return -2;
 	return varAB / sqrt(varA * varB);
+}
+
+// x in a, cal y in b
+Point2f regY2(std::vector<Point2f> a, std::vector<Point2f> b, Point2f x){
+	Point2f avgA = avgPoint2f(a), avgB = avgPoint2f(b);
+	double varB = 0, varAB = 0;
+	for (int i = 0; i < a.size(); ++i){
+		varB += (b[i] - avgB).ddot(b[i] - avgB);
+		varAB += (a[i] - avgA).ddot(b[i] - avgB);
+	}
+
+	return (varAB / varB) * x + avgB;
 }
 
 double featureMatching(Mat &img_1, Mat &img_2, Mat &img_matches, Point2f &center) {
@@ -402,39 +413,130 @@ void getImgFeature(Mat &img, std::vector<KeyPoint> &keypoints, Mat &descriptors)
 
 	Mat img_keypoints;
 	drawKeypoints(img, keypoints, img_keypoints, Scalar::all(-1), DrawMatchesFlags::DEFAULT);
-	imshow("Keypoints", img_keypoints);
 
 	// rows => numbers of keypoints
 	// cols => numbers of features (128)
+	// type => CV_32F
 	SiftDescriptorExtractor extractor;
 	extractor.compute(img, keypoints, descriptors);
 
 	return;
 }
 
-void getAreaFeature(Point P1, Point P2, std::vector<KeyPoint> keypoint, Mat descriptors, std::vector<KeyPoint> &areaKeypoint, Mat &areaDescriptors){
-
+// (P1, P2)
+bool isInArea(Point P1, Point P2, Point2f p){
+	if (P1.x <= p.x && p.x <= P2.x && P1.y <= p.y && p.y <= P2.y)
+		return true;
+	return false;
 }
 
-void findAreaNice(Point tP1, Point tP2, Mat &img1, Mat &img2){
+void getAreaFeature(Point P1, Point P2, std::vector<KeyPoint> keypoint, Mat descriptors, std::vector<KeyPoint> &areaKeypoint, Mat &areaDescriptors){
+	std::vector<float *> des;
+	areaKeypoint.clear();
+	for (int i = 0; i < keypoint.size(); ++i){
+		if (isInArea(P1, P2, keypoint[i].pt)){
+			areaKeypoint.push_back(keypoint[i]);
+			float *oneDes = new float[descriptors.cols];
+			for (int j = 0; j < descriptors.cols; ++j)
+				oneDes[j] = ((float *)descriptors.data)[(i * descriptors.cols + j) * descriptors.channels()];
+			des.push_back(oneDes);
+		}
+	}
+
+	areaDescriptors = Mat(des.size(), descriptors.cols, CV_32F);
+	for (int i = 0; i < des.size(); ++ i)
+	for (int j = 0; j < descriptors.cols; ++j)
+		((float *)areaDescriptors.data)[(i * descriptors.cols + j) * descriptors.channels()] = des[i][j];
+
+	return;
+}
+
+double matchingArea(std::vector<DMatch> &matches, Point2f centerX, Point2f &centerY, std::vector<KeyPoint> keypoints_1, Mat descriptors_1, std::vector<KeyPoint> keypoints_2, Mat descriptors_2){
+	double cc = -1;
+	FlannBasedMatcher matcher;
+	if (sum(descriptors_2)[0] == 0) return cc;
+	matcher.match(descriptors_1, descriptors_2, matches);
+
+	sort(matches.begin(), matches.end(), cmpDMatch);
+
+	std::vector<Point2f> obj;
+	std::vector<Point2f> scene;
+
+	for (int i = 0; i < 20 && i < matches.size(); ++i){
+		obj.push_back(keypoints_1[matches[i].queryIdx].pt);
+		scene.push_back(keypoints_2[matches[i].trainIdx].pt);
+	}
+
+	cc = corr2(obj, scene);
+	centerY = regY2(obj, scene, centerX);
+
+	return cc;
+}
+
+void findAreaNice(Point tP1, Point tP2, Mat img1, Mat img2){
 	Mat match = img1
 		.colRange(max(0, tP1.x), min(img1.cols, tP2.x + 1))
 		.rowRange(max(0, tP1.y), min(img1.rows, tP2.y + 1));
 	imshow("match", match);
+
+	Point2f centerX = Point2f(match.cols / 2, match.rows / 2);
+
 	std::vector<KeyPoint> keypoints1, keypoints2;
 	Mat descriptors1, descriptors2;
 	getImgFeature(match, keypoints1, descriptors1);
 	getImgFeature(img2, keypoints2, descriptors2);
+
+	Mat img_keypoints1;
+	drawKeypoints(img2, keypoints2, img_keypoints1, Scalar::all(-1), DrawMatchesFlags::DEFAULT);
+	imshow("Keypoints1", img_keypoints1);
 	
-	std::vector<KeyPoint> areaKeypoint;
-	Mat areaDescriptors;
-	getAreaFeature(tP1, tP2, keypoints2, descriptors2, areaKeypoint, areaDescriptors);
+	double cc, maxV = -1;
+	Point2f niceCenterY;
+	std::vector<DMatch> niceMatches;
+	std::vector<KeyPoint> niceKeypoints;
+	for (int i = 120; i < img1.rows - 120; i += 5){
+		for (int j = 120; j < img1.cols - 120; j += 5){
+			std::vector<KeyPoint> areaKeypoint = std::vector<KeyPoint>();
+			Mat areaDescriptors;
+			getAreaFeature(Point(j - 120, i - 120), Point(j + 120, i + 120), keypoints2, descriptors2, areaKeypoint, areaDescriptors);
 
-	Mat img_keypoints;
-	drawKeypoints(img2.colRange(tP1.x, tP2.x + 1).rowRange(tP1.y, tP2.y + 1), areaKeypoint, img_keypoints, Scalar::all(-1), DrawMatchesFlags::DEFAULT);
-	imshow("Keypoints", img_keypoints);
 
+			std::vector<DMatch> matches = std::vector<DMatch>();
+			Point2f centerY;
+			cc = matchingArea(matches, centerX, centerY, keypoints1, descriptors1, areaKeypoint, areaDescriptors);
+			if (maxV < cc){
+				maxV = cc;
+				printf("(%d, %d)\n", j, i);
+				niceCenterY = Point2f(centerY.x, centerY.y);
+				printf("(%lf, %lf)\n", niceCenterY.x, niceCenterY.y);
+				niceMatches = matches;
+				niceKeypoints = areaKeypoint;
+			}
+		}
+		printf("i: %d, max: %lf\n", i, maxV);
+	}
 
+	//Mat img_keypoints;
+	//drawKeypoints(img2, areaKeypoint, img_keypoints, Scalar::all(-1), DrawMatchesFlags::DEFAULT);
+	//imshow("areaKeypoints", img_keypoints);
+
+	Mat img_matches;
+	//-- Draw only "good" matches
+	std::vector< DMatch > good_matches;
+	for (int i = 0; i < 20 && i < niceMatches.size(); i++){
+		good_matches.push_back(niceMatches[i]);
+	}
+	drawMatches(match, keypoints1, img2, niceKeypoints,
+		good_matches, img_matches, Scalar::all(-1), Scalar::all(-1),
+		vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+
+	//-- Show detected matches
+	imshow("Good Matches", img_matches);
+	
+	Mat result = img2
+		.colRange(niceCenterY.x - 150, niceCenterY.x + 150)
+		.rowRange(niceCenterY.y - 150, niceCenterY.y + 150);
+	imshow("result", result);
 	waitKey(0);
 
 	return;
